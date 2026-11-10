@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ARCADE HUB</title>
+<style>
+:root{color-scheme:dark;--bg:#080b14;--panel:#111827;--line:#263449;--muted:#9aa9bd;--text:#f4f7fb;--a:#7c5cff;--b:#00d4ff}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top,#17223a 0,#080b14 58%);color:var(--text);font-family:Arial,Helvetica,sans-serif;min-height:100vh}
+header{padding:34px 22px 18px;text-align:center}h1{margin:0;font-size:clamp(30px,5vw,48px);letter-spacing:3px;font-weight:900}h1 span{background:linear-gradient(90deg,var(--b),#9b7bff);-webkit-background-clip:text;background-clip:text;color:transparent}
+.sub{color:var(--muted);margin:10px 0 0;font-size:14px}
+main{max-width:1180px;margin:auto;padding:18px 22px 50px}
+.import{background:linear-gradient(135deg,#171f33,#101725);border:1px solid var(--line);border-radius:18px;padding:22px;text-align:center;margin:0 auto 20px;max-width:760px;box-shadow:0 16px 50px #0005}
+.import strong{display:block;font-size:18px;margin-bottom:7px}.import p{color:var(--muted);font-size:13px;line-height:1.5;margin:0 0 16px}
+.filelabel{display:inline-flex;align-items:center;justify-content:center;padding:12px 20px;border-radius:11px;background:linear-gradient(100deg,#6554ef,#168fc4);font-weight:800;cursor:pointer;box-shadow:0 7px 22px #3b4de455}
+input[type=file]{display:none}.status{font-size:12px;color:#9fb4cc;margin-top:12px;min-height:16px}
+.toolbar{display:flex;gap:12px;align-items:center;margin:22px 0 16px;flex-wrap:wrap}
+#search{flex:1;min-width:190px;background:#111827;border:1px solid var(--line);color:white;border-radius:10px;padding:13px 14px;font-size:14px;outline:none}
+#search:focus{border-color:#7c5cff}.count{color:var(--muted);font-size:13px;white-space:nowrap}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(175px,1fr));gap:12px}
+.game{border:1px solid #29364c;background:linear-gradient(145deg,#172236,#101725);color:#edf4ff;border-radius:13px;padding:17px 14px;min-height:76px;text-align:left;font-size:14px;font-weight:700;cursor:pointer;transition:.16s;overflow:hidden;text-overflow:ellipsis}
+.game:before{content:"▶";color:#69dfff;margin-right:9px;font-size:11px}.game:hover{transform:translateY(-3px);border-color:#7e71ff;box-shadow:0 9px 25px #0005;background:linear-gradient(145deg,#202d49,#151e30)}
+.empty{color:var(--muted);text-align:center;padding:35px;grid-column:1/-1;border:1px dashed var(--line);border-radius:14px}
+#player{display:none;position:fixed;inset:0;background:#05070c;z-index:10;flex-direction:column}
+#playerbar{height:54px;flex:none;display:flex;align-items:center;gap:10px;padding:8px 12px;background:#111827;border-bottom:1px solid #28364c}
+#playingTitle{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.ctrl{border:1px solid #34445e;background:#1c2940;color:white;padding:8px 12px;border-radius:8px;cursor:pointer;font-weight:700}
+.ctrl:hover{background:#2b3b59}#gameframe{border:0;background:white;flex:1;width:100%;height:calc(100% - 54px)}
+.note{text-align:center;color:#6f8199;font-size:11px;margin-top:26px}
+@media(max-width:520px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.game{padding:14px 10px;font-size:12px}header{padding-top:26px}}
+</style>
+</head>
+<body>
+<header><h1><span>ARCADE HUB</span></h1><p class="sub">Pick a game. Press play. Have fun.</p></header>
+<main>
+<section class="import">
+<strong>Load your game pack</strong>
+<p>Choose the ZIP you downloaded for Offline-HTML-Games-Pack. The games are read from the ZIP and run from their HTML code — this page does not open GitHub game URLs.</p>
+<label class="filelabel" for="zipfile">＋ Select Games ZIP</label>
+<input id="zipfile" type="file" accept=".zip,application/zip">
+<div class="status" id="status">No game pack loaded yet.</div>
+</section>
+<div class="toolbar"><input id="search" placeholder="Search games..." disabled><span class="count" id="count">0 games</span></div>
+<section class="grid" id="grid"><div class="empty">Select the games ZIP to build your game buttons.</div></section>
+<p class="note">Games run from the HTML files inside the selected ZIP. Nothing is uploaded by this page.</p>
+</main>
+<section id="player">
+<div id="playerbar"><span id="playingTitle">Game</span><button class="ctrl" id="full">Fullscreen</button><button class="ctrl" id="close">✕ Close</button></div>
+<iframe id="gameframe" title="Game window" allow="autoplay; fullscreen; gamepad; clipboard-read; clipboard-write" sandbox="allow-scripts allow-same-origin allow-forms allow-pointer-lock allow-popups allow-modals"></iframe>
+</section>
+<script>
+const zipInput=document.getElementById('zipfile'),statusEl=document.getElementById('status'),grid=document.getElementById('grid'),search=document.getElementById('search'),count=document.getElementById('count'),player=document.getElementById('player'),frame=document.getElementById('gameframe'),playingTitle=document.getElementById('playingTitle');
+let games=[];
+function u16(v,o){return v.getUint16(o,true)}function u32(v,o){return v.getUint32(o,true)}
+async function unzipHtml(file){
+ const buf=await file.arrayBuffer(),dv=new DataView(buf);let eocd=-1;
+ for(let p=buf.byteLength-22;p>=Math.max(0,buf.byteLength-65558);p--){if(u32(dv,p)===0x06054b50){eocd=p;break}}
+ if(eocd<0)throw Error('That ZIP file could not be read.');
+ const total=u16(dv,eocd+10),central=u32(dv,eocd+16),decoder=new TextDecoder();
+ let pos=central,found=[];
+ for(let i=0;i<total;i++){
+  if(u32(dv,pos)!==0x02014b50)throw Error('The ZIP directory is damaged.');
+  const flags=u16(dv,pos+8),method=u16(dv,pos+10),csize=u32(dv,pos+20),nlen=u16(dv,pos+28),elen=u16(dv,pos+30),clen=u16(dv,pos+32),local=u32(dv,pos+42);
+  const nameBytes=new Uint8Array(buf,pos+46,nlen),name=decoder.decode(nameBytes);
+  if(!name.endsWith('/')&&/^(.+\/)?offline\/.+\.html?$/i.test(name)){
+   const ln=u16(dv,local+26),le=u16(dv,local+28),start=local+30+ln+le,compressed=buf.slice(start,start+csize);
+   let data;
+   if(method===0)data=compressed;
+   else if(method===8){if(!('DecompressionStream'in window))throw Error('This browser cannot unpack ZIP files. Try Chrome or Edge.');const ds=new DecompressionStream('deflate-raw');data=await new Response(new Blob([compressed]).stream().pipeThrough(ds)).arrayBuffer()}
+   else {pos+=46+nlen+elen+clen;continue}
+   found.push({name:name.split('/').pop().replace(/\.html?$/i,''),path:name,html:decoder.decode(data)});
+  }
+  pos+=46+nlen+elen+clen;
+ }
+ return found.sort((a,b)=>a.name.localeCompare(b.name));
+}
+function draw(){
+ const term=search.value.trim().toLowerCase(),list=games.filter(g=>g.name.toLowerCase().includes(term));
+ count.textContent=`${list.length} / ${games.length} games`;grid.innerHTML='';
+ if(!list.length){grid.innerHTML='<div class="empty">No matching games found.</div>';return}
+ for(const game of list){const b=document.createElement('button');b.className='game';b.textContent=game.name;b.title=game.path;b.addEventListener('click',()=>launch(game));grid.appendChild(b)}
+}
+function launch(game){playingTitle.textContent=game.name;frame.srcdoc=game.html;player.style.display='flex';document.body.style.overflow='hidden'}
+function closeGame(){player.style.display='none';frame.srcdoc='';document.body.style.overflow=''}
+zipInput.addEventListener('change',async()=>{
+ const file=zipInput.files[0];if(!file)return;
+ statusEl.textContent='Reading game files from ZIP...';grid.innerHTML='<div class="empty">Loading game HTML...</div>';search.disabled=true;
+ try{games=await unzipHtml(file);if(!games.length)throw Error('No HTML games were found in an offline folder inside that ZIP.');search.disabled=false;search.value='';draw();statusEl.textContent=`Loaded ${games.length} HTML games from ${file.name}.`; }
+ catch(e){games=[];count.textContent='0 games';grid.innerHTML='<div class="empty">Could not load the games. '+e.message+'</div>';statusEl.textContent='ZIP import failed.'}
+});
+search.addEventListener('input',draw);document.getElementById('close').addEventListener('click',closeGame);
+document.getElementById('full').addEventListener('click',async()=>{try{if(!document.fullscreenElement)await player.requestFullscreen();else await document.exitFullscreen()}catch(e){statusEl.textContent='Fullscreen is unavailable in this browser.'}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&player.style.display==='flex'&&!document.fullscreenElement)closeGame()});
+</script>
+</body>
+</html>
